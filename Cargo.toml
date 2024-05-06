@@ -1,0 +1,36 @@
+[package]
+name = "endlessrecorder"
+version = "0.1.0"
+
+[[bin]]
+name = "endlessrecorder"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+cpal = "0.15"
+hound = "3.4"
+chrono = "0.4"
+ringbuf = "0.4"
+clap = "4.5"
+crossterm = "0.27"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { features = [
+    "Win32_Media_Audio",
+    "Win32_Foundation",
+    "Win32_Devices_Properties",
+    "Win32_Media_KernelStreaming",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_System_SystemServices",
+    "Win32_System_Variant",
+    "Win32_Media_Multimedia",
+    "Win32_UI_Shell_PropertiesSystem"
+]}
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))'.dependencies]
+alsa = "0.9"
+libc = "0.2"
+jack = { version = "0.11", optional = true }
