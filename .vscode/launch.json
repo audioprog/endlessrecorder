@@ -18,6 +18,25 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Release executable 'endlessrecorder'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=endlessrecorder",
+                    "--package=endlessrecorder",
+                    "--release"
+                ],
+                "filter": {
+                    "name": "endlessrecorder",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
         }
     ]
 }
