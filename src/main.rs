@@ -20,11 +20,11 @@ extern crate chrono;
 extern crate confy;
 extern crate serde;
 
-mod mainconfig; // Moduldeklaration
-use mainconfig::MainConfig; // Verwendung der MainConfig Struktur aus dem config Modul
+mod mainconfig; 
 
+use mainconfig::MainConfig;
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, StreamConfig};
-use std::{env, io::{self, Write}};
+use std::{env, io::{self, Write}, path::{Path, PathBuf}};
 use hound::{WavSpec, WavWriter};
 use std::sync::{atomic::AtomicBool, atomic::Ordering, mpsc::channel, Arc};
 use std::thread;
@@ -46,6 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let host = cpal::default_host();
 
+    let global_config_dir = get_global_config_path(&app_name).join("default-config.ron");
+    println!("Global: {:?}", global_config_dir);
+
     let conffile = confy::get_configuration_file_path(&app_name, None)?;
     println!("{:#?}", conffile);
 
@@ -55,6 +58,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let cfg_in: MainConfig = confy::load(app_name, None)?;
         if cfg_in.selected_device.is_some() {
             cfg_in
+        } else if global_config_dir.exists() {
+            let global_path: &Path = global_config_dir.as_path();
+            confy::load_path::<MainConfig>(global_path)?
         } else {
             init_config(&app_name)?
         }
@@ -226,4 +232,15 @@ fn init_config(app_name: &str) -> Result<mainconfig::MainConfig, Box<dyn Error>>
     };
     confy::store(app_name, None, new_cfg.clone())?;
     Ok(new_cfg)
+}
+
+fn get_global_config_path(app_name: &str) -> PathBuf {
+    #[cfg(target_os = "linux")]
+    return PathBuf::from("/etc/").join(app_name);
+
+    #[cfg(target_os = "windows")]
+    return PathBuf::from("C:\\ProgramData\\").join(app_name);
+
+    #[cfg(target_os = "macos")]
+    return PathBuf::from("/Library/Application Support/").join(app_name);
 }
