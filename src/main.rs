@@ -136,11 +136,62 @@ fn main() -> Result<(), Box<dyn Error>> {
     stream.play().unwrap();
 
     // Thread for writing to WAV files
-    let write_thread = thread::spawn(move || {
+    let write_thread = start_write_thread(receiver, running.clone(), supported_channels, selected_sample_rate);
+
+    write_thread.join().unwrap();
+
+    drop(stream);
+
+    println!("Record stop");
+
+    Ok(())
+}
+
+
+// Function for selecting the device
+fn init_config(app_name: &str) -> Result<mainconfig::MainConfig, Box<dyn Error>> {
+    let host = cpal::default_host();
+    let devices: Vec<cpal::Device> = host.input_devices()?.collect();
+    println!("Please select an audio device:");
+    for (index, device) in devices.iter().enumerate() {
+        println!("{}: {}", index + 1, device.name()?);
+    }
+
+    let mut device_index = String::new();
+    io::stdout().flush().unwrap(); // Make sure that the text is output immediately.
+    io::stdin().read_line(&mut device_index).expect("Error when reading the input");
+    let device_index: usize = device_index.trim().parse::<usize>().expect("Please enter a valid number") - 1;
+    
+    let selected_device = devices.get(device_index).expect("Invalid device number selected");
+    let device_name = selected_device.name()?;
+    let new_cfg = MainConfig {
+        selected_device: Some(device_name.clone()),
+    };
+    confy::store(app_name, None, new_cfg.clone())?;
+    Ok(new_cfg)
+}
+
+
+fn get_global_config_path(app_name: &str) -> PathBuf {
+    #[cfg(target_os = "linux")]
+    return PathBuf::from("/etc/").join(app_name);
+
+    #[cfg(target_os = "windows")]
+    return PathBuf::from("C:\\ProgramData\\").join(app_name);
+
+    #[cfg(target_os = "macos")]
+    return PathBuf::from("/Library/Application Support/").join(app_name);
+}
+
+
+fn start_write_thread(
+    receiver: std::sync::mpsc::Receiver<Vec<f32>>,
+    running: Arc<AtomicBool>,
+    supported_channels: u16,
+    selected_sample_rate: u32,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
         let mut cached_samples = Vec::new();
-
-        println!("wave cache start");
-
         let mut filename = format!("{}.wav", Local::now().format("%Y-%m-%d_%H-%M-%S"));
         println!("File {}", filename);
 
@@ -176,7 +227,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             if !running.load(Ordering::SeqCst) {
                 if cached_samples.len() * std::mem::size_of::<f32>() > 0 {
-
                     let spec = WavSpec {
                         channels: supported_channels,
                         sample_rate: selected_sample_rate,
@@ -191,56 +241,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     writer.finalize().unwrap();
                     
                     println!("finished file {}", filename);
-
-                    if !running.load(Ordering::SeqCst) {
-                        break;
-                    }
                 }
                 break;
             }
         }
         println!("wave cache file ends");
-    });
-
-    write_thread.join().unwrap();
-
-    drop(stream);
-
-    println!("Record stop");
-
-    Ok(())
-}
-
-// Function for selecting the device
-fn init_config(app_name: &str) -> Result<mainconfig::MainConfig, Box<dyn Error>> {
-    let host = cpal::default_host();
-    let devices: Vec<cpal::Device> = host.input_devices()?.collect();
-    println!("Please select an audio device:");
-    for (index, device) in devices.iter().enumerate() {
-        println!("{}: {}", index + 1, device.name()?);
-    }
-
-    let mut device_index = String::new();
-    io::stdout().flush().unwrap(); // Make sure that the text is output immediately.
-    io::stdin().read_line(&mut device_index).expect("Error when reading the input");
-    let device_index: usize = device_index.trim().parse::<usize>().expect("Please enter a valid number") - 1;
-    
-    let selected_device = devices.get(device_index).expect("Invalid device number selected");
-    let device_name = selected_device.name()?;
-    let new_cfg = MainConfig {
-        selected_device: Some(device_name.clone()),
-    };
-    confy::store(app_name, None, new_cfg.clone())?;
-    Ok(new_cfg)
-}
-
-fn get_global_config_path(app_name: &str) -> PathBuf {
-    #[cfg(target_os = "linux")]
-    return PathBuf::from("/etc/").join(app_name);
-
-    #[cfg(target_os = "windows")]
-    return PathBuf::from("C:\\ProgramData\\").join(app_name);
-
-    #[cfg(target_os = "macos")]
-    return PathBuf::from("/Library/Application Support/").join(app_name);
+    })
 }
