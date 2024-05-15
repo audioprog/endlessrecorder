@@ -1,6 +1,6 @@
 [package]
 name = "endlessrecorder"
-version = "0.1.0"
+version = "0.2.0"
 
 [[bin]]
 name = "endlessrecorder"
@@ -13,7 +13,8 @@ hound = "3.4"
 chrono = "0.4"
 ringbuf = "0.4"
 clap = "4.5"
-crossterm = "0.27"
+confy = { version = "0.6", features = ["ron_conf"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { features = [

@@ -14,13 +14,17 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 extern crate cpal;
-extern crate crossterm;
 extern crate ringbuf;
 extern crate hound;
 extern crate chrono;
+extern crate confy;
+extern crate serde;
+
+mod mainconfig; // Moduldeklaration
+use mainconfig::MainConfig; // Verwendung der MainConfig Struktur aus dem config Modul
 
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, StreamConfig};
-use crossterm::event;
+use std::{env, io::{self, Write}};
 use hound::{WavSpec, WavWriter};
 use std::sync::{atomic::AtomicBool, atomic::Ordering, mpsc::channel, Arc};
 use std::thread;
@@ -32,12 +36,33 @@ const CACHE_SIZE_IN_BYTES: usize = 512 * 1024 * 1024; // 512 MB
 const CACHE_FLUSH_SIZE: usize = CACHE_SIZE_IN_BYTES / 2; // Half the cache size
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("{} Version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    let app_name = env!("CARGO_PKG_NAME");
+    println!("{} Version {}", &app_name, env!("CARGO_PKG_VERSION"));
     let current_dir = std::env::current_dir()?;
     println!("Current working directory: {:?}", current_dir);
 
+    let args: Vec<String> = env::args().collect();
+    let reinit = args.contains(&"reinit".to_string());
+
     let host = cpal::default_host();
-    let device = host.default_input_device().expect("No input device available");
+
+    let conffile = confy::get_configuration_file_path(&app_name, None)?;
+    println!("{:#?}", conffile);
+
+    let cfg: MainConfig = if reinit {
+        init_config(&app_name)?
+    } else {
+        let cfg_in: MainConfig = confy::load(app_name, None)?;
+        if cfg_in.selected_device.is_some() {
+            cfg_in
+        } else {
+            init_config(&app_name)?
+        }
+    };
+
+    println!("{:#?}", cfg.selected_device.as_ref().unwrap());
+
+    let device = host.devices()?.find(|d| d.name().ok().as_ref() == cfg.selected_device.as_ref()).expect("Saved device not found");
 
     let mut max_sample_rate: u32 = 0;
 	let mut supported_channels: u16 = 1;
@@ -73,13 +98,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Thread für das Erkennen von Tastendrücken
     thread::spawn(move || {
-        while r.load(Ordering::SeqCst) {
-            if event::poll(std::time::Duration::from_millis(100)).unwrap() {
-                if let Ok(true) = event::read().map(|e| matches!(e, event::Event::Key(_))) {
-                    r.store(false, Ordering::SeqCst);
-                }
-            }
-        }
+        println!("Press Enter to exit...");
+
+        let mut input = String::new();
+        io::stdout().flush().unwrap(); // Ensures that the above text is output immediately.
+        io::stdin().read_line(&mut input).unwrap();
+        r.store(false, Ordering::SeqCst);
     });
     
     let (sender, receiver) = channel();
@@ -171,8 +195,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         println!("wave cache file ends");
     });
-	
-	println!("End with any key");
 
     write_thread.join().unwrap();
 
@@ -181,4 +203,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Record stop");
 
     Ok(())
+}
+
+// Function for selecting the device
+fn init_config(app_name: &str) -> Result<mainconfig::MainConfig, Box<dyn Error>> {
+    let host = cpal::default_host();
+    let devices: Vec<cpal::Device> = host.input_devices()?.collect();
+    println!("Please select an audio device:");
+    for (index, device) in devices.iter().enumerate() {
+        println!("{}: {}", index + 1, device.name()?);
+    }
+
+    let mut device_index = String::new();
+    io::stdout().flush().unwrap(); // Make sure that the text is output immediately.
+    io::stdin().read_line(&mut device_index).expect("Error when reading the input");
+    let device_index: usize = device_index.trim().parse::<usize>().expect("Please enter a valid number") - 1;
+    
+    let selected_device = devices.get(device_index).expect("Invalid device number selected");
+    let device_name = selected_device.name()?;
+    let new_cfg = MainConfig {
+        selected_device: Some(device_name.clone()),
+    };
+    confy::store(app_name, None, new_cfg.clone())?;
+    Ok(new_cfg)
 }
