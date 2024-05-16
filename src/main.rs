@@ -40,33 +40,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{} Version {}", &app_name, env!("CARGO_PKG_VERSION"));
     let current_dir = std::env::current_dir()?;
     println!("Current working directory: {:?}", current_dir);
-
-    let args: Vec<String> = env::args().collect();
-    let reinit = args.contains(&"reinit".to_string());
-
-    let host = cpal::default_host();
-
-    let global_config_dir = get_global_config_path(&app_name).join("default-config.ron");
-    println!("Global: {:?}", global_config_dir);
-
-    let conffile = confy::get_configuration_file_path(&app_name, None)?;
-    println!("{:#?}", conffile);
-
-    let cfg: MainConfig = if reinit {
-        init_config(&app_name)?
-    } else {
-        let cfg_in: MainConfig = confy::load(app_name, None)?;
-        if cfg_in.selected_device.is_some() {
-            cfg_in
-        } else if global_config_dir.exists() {
-            let global_path: &Path = global_config_dir.as_path();
-            confy::load_path::<MainConfig>(global_path)?
-        } else {
-            init_config(&app_name)?
-        }
-    };
-
+    
+    let cfg = get_config()?;
+    
     println!("{:#?}", cfg.selected_device.as_ref().unwrap());
+    
+    let host = cpal::default_host();
 
     let device = host.devices()?.find(|d| d.name().ok().as_ref() == cfg.selected_device.as_ref()).expect("Saved device not found");
 
@@ -99,13 +78,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Flag for the clean termination of the program
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    let sr = running.clone();
-
+    
     // Thread für das Erkennen von Tastendrücken
+    let r = running.clone();
     thread::spawn(move || {
         println!("Press Enter to exit...");
-
+        
         let mut input = String::new();
         io::stdout().flush().unwrap(); // Ensures that the above text is output immediately.
         io::stdin().read_line(&mut input).unwrap();
@@ -113,12 +91,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     
     let (sender, receiver) = channel();
-
+    
     // Thread for caching samples
     let cache_sender = sender.clone();
-
+    
     println!("Record start");
-
+    
+    let sr = running.clone();
     let stream = device.build_input_stream(
         &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
@@ -145,6 +124,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Record stop");
 
     Ok(())
+}
+
+
+fn get_config() -> Result<mainconfig::MainConfig, Box<dyn Error>> {
+    let app_name = env!("CARGO_PKG_NAME");
+    let global_config_dir = get_global_config_path(&app_name).join("default-config.ron");
+    println!("Global: {:?}", global_config_dir);
+    
+    let conffile = confy::get_configuration_file_path(&app_name, None)?;
+    println!("{:#?}", conffile);
+    
+    let args: Vec<String> = env::args().collect();
+    let reinit = args.contains(&"reinit".to_string());
+    
+    let cfg: MainConfig = if reinit {
+        init_config(&app_name)?
+    } else {
+        let cfg_in: MainConfig = confy::load(app_name, None)?;
+        if cfg_in.selected_device.is_some() {
+            cfg_in
+        } else if global_config_dir.exists() {
+            let global_path: &Path = global_config_dir.as_path();
+            confy::load_path::<MainConfig>(global_path)?
+        } else {
+            init_config(&app_name)?
+        }
+    };
+    Ok(cfg)
 }
 
 
